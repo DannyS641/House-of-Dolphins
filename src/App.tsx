@@ -85,8 +85,16 @@ const daysBetweenInclusive = (startISO: string, endISO: string) => {
   return Math.max(1, days);
 };
 
-const resolveCourtImage = (court: Court) =>
-  court.card_image || court.hero_image || court.image || "";
+const COURTS_BUCKET = "courts";
+
+const resolveCourtImage = (court: Court) => {
+  const raw = court.card_image || court.hero_image || court.image || "";
+  if (!raw) return "";
+  if (raw.startsWith("http")) return raw;
+  if (!supabase) return raw;
+  const { data } = supabase.storage.from(COURTS_BUCKET).getPublicUrl(raw);
+  return data.publicUrl.replace(/ /g, "%20");
+};
 
 const fallbackCourts: Court[] = [
   {
