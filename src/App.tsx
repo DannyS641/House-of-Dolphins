@@ -590,10 +590,12 @@ function App() {
       return;
     }
     if (data.min_amount && baseAmount < data.min_amount) {
+      setPromo(null);
       setPromoNote({
         tone: "bad",
         message: `Minimum booking amount is ${formatNaira(data.min_amount)}.`,
       });
+      return;
     }
 
     setPromo({
