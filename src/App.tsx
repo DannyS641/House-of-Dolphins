@@ -827,8 +827,12 @@ function App() {
       <header className="sticky top-0 z-30 bg-[#faf9f7]/90 backdrop-blur border-b border-[#e6e2db]">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-[var(--court)] flex items-center justify-center text-white font-display text-lg">
-              AD
+            <div className="h-10 w-10 overflow-hidden rounded-full bg-white">
+              <img
+                src="/adrenale.png"
+                alt="Adrenale Dolphins Rentals logo"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div>
               <p className="font-display text-lg leading-none">
