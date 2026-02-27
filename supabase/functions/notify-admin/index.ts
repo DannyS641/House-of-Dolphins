@@ -1,12 +1,13 @@
 /// <reference lib="deno.ns" />
 /// <reference lib="dom" />
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+const EMAILJS_SERVICE_ID = Deno.env.get("EMAILJS_SERVICE_ID") ?? "";
+const EMAILJS_TEMPLATE_ID = Deno.env.get("EMAILJS_TEMPLATE_ID") ?? "";
+const EMAILJS_PUBLIC_KEY = Deno.env.get("EMAILJS_PUBLIC_KEY") ?? "";
+const EMAILJS_PRIVATE_KEY = Deno.env.get("EMAILJS_PRIVATE_KEY") ?? "";
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") ?? "";
-const FROM_EMAIL =
-  Deno.env.get("FROM_EMAIL") ?? "Dolphins Rentals <bookings@dolphins.app>";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const EMAILJS_ENDPOINT = "https://api.emailjs.com/api/v1.0/email/send";
 
 type BookingPayload = {
   court_id?: string;
@@ -40,8 +41,16 @@ Deno.serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  if (!RESEND_API_KEY || !ADMIN_EMAIL) {
-    return new Response("Missing RESEND_API_KEY or ADMIN_EMAIL", { status: 500 });
+  if (
+    !EMAILJS_SERVICE_ID ||
+    !EMAILJS_TEMPLATE_ID ||
+    !EMAILJS_PUBLIC_KEY ||
+    !ADMIN_EMAIL
+  ) {
+    return new Response(
+      "Missing EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, or ADMIN_EMAIL",
+      { status: 500 },
+    );
   }
 
   let payload: Record<string, unknown> = {};
@@ -57,32 +66,29 @@ Deno.serve(async (req) => {
       ? `${record.start_date ?? ""}${record.start_time ? ` at ${record.start_time}` : ""}`
       : `${record.start_date ?? ""}${record.end_date ? ` to ${record.end_date}` : ""}`;
 
-  const subject = `New booking: ${record.customer_name ?? "New customer"}`;
-  const text = [
-    `Court: ${record.court_id ?? "N/A"}`,
-    `Plan: ${record.plan ?? "N/A"}`,
-    `Date: ${dateLabel || "N/A"}`,
-    `Total: ${formatAmount(record.total_amount)}`,
-    `Customer: ${record.customer_name ?? "N/A"}`,
-    `Email: ${record.customer_email ?? "N/A"}`,
-    `Phone: ${record.customer_phone ?? "N/A"}`,
-    `Event: ${record.event_type ?? "N/A"}`,
-    record.notes ? `Notes: ${record.notes}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const response = await fetch(RESEND_ENDPOINT, {
+  const response = await fetch(EMAILJS_ENDPOINT, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject,
-      text,
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      accessToken: EMAILJS_PRIVATE_KEY || undefined,
+      template_params: {
+        admin_email: ADMIN_EMAIL,
+        to_email: ADMIN_EMAIL,
+        customer_name: record.customer_name ?? "New customer",
+        customer_email: record.customer_email ?? "N/A",
+        customer_phone: record.customer_phone ?? "N/A",
+        court_id: record.court_id ?? "N/A",
+        plan: record.plan ?? "N/A",
+        date_label: dateLabel || "N/A",
+        total_amount: formatAmount(record.total_amount),
+        event_type: record.event_type ?? "N/A",
+        notes: record.notes ?? "",
+      },
     }),
   });
 

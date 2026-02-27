@@ -86,13 +86,37 @@ const daysBetweenInclusive = (startISO: string, endISO: string) => {
 };
 
 const COURTS_BUCKET = "courts";
+const COURT_IMAGE_OVERRIDES: Record<string, string> = {
+  "indoor-arena": "/indoor%20arena.jpg",
+  "airport-view": "/airport.jpg",
+};
+const COURT_PRICE_OVERRIDES: Record<
+  string,
+  Partial<Pick<Court, "hourly_rate" | "daily_rate" | "weekly_rate">>
+> = {
+  "indoor-arena": { hourly_rate: 30000 },
+};
+
+const normalizeCourtImagePath = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http")) return trimmed;
+  const cleaned = trimmed.replace(/^\/+/, "");
+  const bucketPrefix = `${COURTS_BUCKET}/`;
+  return cleaned.startsWith(bucketPrefix)
+    ? cleaned.slice(bucketPrefix.length)
+    : cleaned;
+};
 
 const resolveCourtImage = (court: Court) => {
+  const override = COURT_IMAGE_OVERRIDES[court.id];
+  if (override) return override;
   const raw = court.card_image || court.hero_image || court.image || "";
-  if (!raw) return "";
-  if (raw.startsWith("http")) return raw;
-  if (!supabase) return raw;
-  const { data } = supabase.storage.from(COURTS_BUCKET).getPublicUrl(raw);
+  const normalized = normalizeCourtImagePath(raw);
+  if (!normalized) return "";
+  if (normalized.startsWith("http")) return normalized;
+  if (!supabase) return normalized;
+  const { data } = supabase.storage.from(COURTS_BUCKET).getPublicUrl(normalized);
   return data.publicUrl.replace(/ /g, "%20");
 };
 
@@ -100,11 +124,10 @@ const fallbackCourts: Court[] = [
   {
     id: "indoor-arena",
     name: "Indoor Arena",
-    hourly_rate: 35000,
+    hourly_rate: 30000,
     daily_rate: 140000,
     weekly_rate: 850000,
-    image:
-      "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&q=80",
+    image: "/indoor%20arena.jpg",
   },
   {
     id: "lounge",
@@ -130,8 +153,7 @@ const fallbackCourts: Court[] = [
     hourly_rate: 15000,
     daily_rate: 120000,
     weekly_rate: 700000,
-    image:
-      "https://images.unsplash.com/photo-1505394033641-40c6ad1178d7?auto=format&fit=crop&w=800&q=80",
+    image: "/airport.jpg",
   },
   {
     id: "barbershop",
@@ -153,28 +175,99 @@ const fallbackCourts: Court[] = [
   },
 ];
 
+const getFallbackCourtImage = (court: Court) => {
+  const direct = court.image?.trim();
+  if (direct) return direct;
+  const byId = fallbackCourts.find((item) => item.id === court.id);
+  if (byId?.image) return byId.image;
+  const byName = fallbackCourts.find((item) =>
+    court.name.toLowerCase().includes(item.name.toLowerCase()),
+  );
+  return (
+    byName?.image ??
+    "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=800&q=80"
+  );
+};
+
 const usageItems = [
   {
     title: "Tournaments",
     copy: "League games, finals, and showcases.",
+    icon: "trophy",
   },
   {
     title: "School events",
     copy: "Sports days, inter-house, assemblies.",
+    icon: "school",
   },
   {
     title: "Weddings",
     copy: "Reception layouts, vendor staging.",
+    icon: "rings",
   },
   {
     title: "Funerals",
     copy: "Overflow seating, organized gathering.",
+    icon: "candle",
   },
   {
     title: "Corporate events",
     copy: "Team bonding, product showcases.",
+    icon: "briefcase",
   },
 ];
+
+const usageIcon = (name: string) => {
+  switch (name) {
+    case "trophy":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+          <path
+            d="M7 4h10v2h3a1 1 0 0 1 1 1c0 3.866-2.239 6-6 6a4.99 4.99 0 0 1-2 1.58V17h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.42A4.99 4.99 0 0 1 9 13C5.239 13 3 10.866 3 7a1 1 0 0 1 1-1h3V4Zm-2 4c.337 1.967 1.704 3 4 3V8H5Zm10 3c2.296 0 3.663-1.033 4-3h-4v3Z"
+            fill="currentColor"
+          />
+        </svg>
+      );
+    case "school":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+          <path
+            d="M12 3 1 8l11 5 9-4.09V17h2V8L12 3Zm-6.5 9.5V16c0 1.933 3.134 3.5 6.5 3.5s6.5-1.567 6.5-3.5v-3.5l-6.5 3-6.5-3Z"
+            fill="currentColor"
+          />
+        </svg>
+      );
+    case "rings":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+          <path
+            d="M7 7a5 5 0 1 0 4.9 6h2.2A5 5 0 1 0 17 7a5 5 0 0 0-4.9 4H9.9A5 5 0 0 0 7 7Zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm10 0a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"
+            fill="currentColor"
+          />
+        </svg>
+      );
+    case "candle":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+          <path
+            d="M12 3c1.657 0 3 1.343 3 3 0 1.19-.7 2.216-1.7 2.702V10h1.7a1 1 0 1 1 0 2h-1.7v7H10.7v-7H9a1 1 0 1 1 0-2h1.7V8.702A2.99 2.99 0 0 1 9 6c0-1.657 1.343-3 3-3Zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"
+            fill="currentColor"
+          />
+        </svg>
+      );
+    case "briefcase":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+          <path
+            d="M9 4a1 1 0 0 0-1 1v1H5a2 2 0 0 0-2 2v4.5A2.5 2.5 0 0 0 5.5 15H9v1h6v-1h3.5A2.5 2.5 0 0 0 21 12.5V8a2 2 0 0 0-2-2h-3V5a1 1 0 0 0-1-1H9Zm1 2h4v1h-4V6Zm-4 4h12v3.5a.5.5 0 0 1-.5.5H15v-1H9v1H6.5a.5.5 0 0 1-.5-.5V10Z"
+            fill="currentColor"
+          />
+        </svg>
+      );
+    default:
+      return null;
+  }
+};
 
 const faqItems = [
   {
@@ -287,15 +380,28 @@ function App() {
       if (!isMounted) return;
       if (error) return;
       if (data && data.length) {
-        setCourts(data);
+        const merged = fallbackCourts.map((fallback) => {
+          const match = data.find(
+            (court) => court.id === fallback.id || court.slug === fallback.id,
+          );
+          if (!match) return fallback;
+          const override = COURT_PRICE_OVERRIDES[fallback.id] ?? {};
+          return {
+            ...match,
+            image: fallback.image,
+            ...override,
+          };
+        });
+        setCourts(merged);
         const qrParam = qrCourtParamRef.current;
         const matchedCourt = qrParam
           ? data.find((court) => court.id === qrParam || court.slug === qrParam)
           : undefined;
-        const fallbackId = data[0].id;
+        const fallbackId = merged[0]?.id ?? data[0].id;
         const nextId =
           matchedCourt?.id ??
-          (selectedCourtId && data.some((court) => court.id === selectedCourtId)
+          (selectedCourtId &&
+          merged.some((court) => court.id === selectedCourtId)
             ? selectedCourtId
             : fallbackId);
         if (nextId && nextId !== selectedCourtId) {
@@ -378,6 +484,45 @@ function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isModalOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-animate]"),
+    );
+    if (!elements.length) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (reduceMotion) {
+      elements.forEach((el) => el.classList.add("is-visible"));
+      return;
+    }
+    const revealIfInView = (el: HTMLElement) => {
+      const rect = el.getBoundingClientRect();
+      const viewTop = window.innerHeight * 0.1;
+      const viewBottom = window.innerHeight * 0.9;
+      if (rect.top < viewBottom && rect.bottom > viewTop) {
+        el.classList.add("is-visible");
+      }
+    };
+    elements.forEach(revealIfInView);
+    document.documentElement.classList.add("motion-ready");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          (entry.target as HTMLElement).classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -10% 0px" },
+    );
+    elements.forEach((el) => {
+      observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [courts.length]);
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -739,7 +884,7 @@ function App() {
           />
           <div className="absolute inset-0 bg-black/65" />
           <div className="relative mx-auto grid min-h-[620px] max-w-6xl gap-10 px-6 py-20 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-            <div>
+            <div data-animate="slide-left">
               <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-xs uppercase tracking-[0.3em]">
                 Dolphins Courts
               </p>
@@ -776,7 +921,11 @@ function App() {
             </div>
 
             <div className="hidden lg:block">
-              <div className="rounded-[40px] border border-white/10 bg-white/5 p-10 text-white/80">
+              <div
+                className="rounded-[40px] border border-white/10 bg-white/5 p-10 text-white/80"
+                data-animate="slide-right"
+                style={{ transitionDelay: "120ms" }}
+              >
                 <p className="text-xs uppercase tracking-[0.3em]">
                   Promo spotlight
                 </p>
@@ -804,7 +953,10 @@ function App() {
           </div>
         </section>
         <section className="mx-auto max-w-6xl px-6 py-12">
-          <div className="grid items-center gap-8 rounded-[32px] border border-[#e6e2db] bg-white px-8 py-10 shadow-[0_14px_40px_rgba(0,0,0,0.08)] md:grid-cols-[1.2fr_0.8fr]">
+          <div
+            className="grid items-center gap-8 rounded-[32px] border border-[#e6e2db] bg-white px-8 py-10 shadow-[0_14px_40px_rgba(0,0,0,0.08)] md:grid-cols-[1.2fr_0.8fr]"
+            data-animate="slide-up"
+          >
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-[#8d877f]">
                 Scan to reserve
@@ -846,53 +998,77 @@ function App() {
             </p>
           </div>
           <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {courts.map((court) => (
-              <article
-                key={court.id}
-                className="rounded-3xl bg-white shadow-[0_10px_40px_rgba(0,0,0,0.06)]"
-              >
-                <div className="overflow-hidden rounded-3xl">
-                  <img
-                    src={resolveCourtImage(court)}
-                    alt={court.name}
-                    className="h-48 w-full object-cover"
-                  />
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold">{court.name}</h3>
-                    <span className="text-xs rounded-full border border-[#e0dad2] px-2 py-1 text-[#6f6b66]">
-                      View
-                    </span>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="font-semibold">
-                      {formatNaira(court.hourly_rate)}/hr
-                    </span>
-                    <button
-                      className="rounded-full border border-[#11110e] px-3 py-1 text-xs font-semibold"
-                      onClick={() => {
-                        setSelectedCourtId(court.id);
-                        setIsModalOpen(true);
+            {courts.map((court) => {
+              const fallbackSrc = getFallbackCourtImage(court);
+              const primarySrc = resolveCourtImage(court) || fallbackSrc;
+              return (
+                <article
+                  key={court.id}
+                  className="rounded-3xl bg-white shadow-[0_10px_40px_rgba(0,0,0,0.06)]"
+                >
+                  <div className="overflow-hidden rounded-3xl">
+                    <img
+                      src={primarySrc}
+                      data-fallback={fallbackSrc}
+                      onError={(event) => {
+                        const target = event.currentTarget;
+                        const nextSrc = target.dataset.fallback;
+                        if (nextSrc && target.src !== nextSrc) {
+                          target.src = nextSrc;
+                        }
                       }}
-                      type="button"
-                    >
-                      Reserve
-                    </button>
+                      alt={court.name}
+                      className={`h-48 w-full object-cover ${
+                        court.id === "indoor-arena"
+                          ? "object-top"
+                          : "object-center"
+                      }`}
+                    />
                   </div>
-                </div>
-              </article>
-            ))}
+                  <div className="p-5">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">{court.name}</h3>
+                      <span className="text-xs rounded-full border border-[#e0dad2] px-2 py-1 text-[#6f6b66]">
+                        View
+                      </span>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className="font-semibold">
+                        {formatNaira(court.hourly_rate)}/hr
+                      </span>
+                      <button
+                        className="rounded-full border border-[#11110e] px-3 py-1 text-xs font-semibold"
+                        onClick={() => {
+                          setSelectedCourtId(court.id);
+                          setIsModalOpen(true);
+                        }}
+                        type="button"
+                      >
+                        Reserve
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
         <section id="usage" className="mx-auto max-w-6xl px-6 pb-16">
-          <div className="rounded-3xl bg-white p-8 shadow-[0_10px_40px_rgba(0,0,0,0.06)]">
+          <div
+            className="rounded-3xl bg-white p-8 shadow-[0_10px_40px_rgba(0,0,0,0.06)]"
+            data-animate="slide-up"
+          >
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-              {usageItems.map((item) => (
-                <div key={item.title} className="rounded-2xl bg-[#faf9f7] p-4">
-                  <div className="h-10 w-10 rounded-full bg-[var(--court)]/10 flex items-center justify-center text-[var(--court)] font-display text-lg">
-                    {item.title.slice(0, 1)}
+              {usageItems.map((item, index) => (
+                <div
+                  key={item.title}
+                  className="rounded-2xl bg-[#faf9f7] p-4"
+                  data-animate="slide-up"
+                  style={{ transitionDelay: `${index * 80}ms` }}
+                >
+                  <div className="h-10 w-10 rounded-full bg-[var(--court)]/10 flex items-center justify-center text-[var(--court)]">
+                    {usageIcon(item.icon)}
                   </div>
                   <p className="mt-3 text-sm font-semibold">{item.title}</p>
                   <p className="mt-2 text-xs text-[#6f6b66]">{item.copy}</p>
@@ -903,9 +1079,12 @@ function App() {
         </section>
 
         <section className="mx-auto max-w-6xl px-6 pb-16">
-          <div className="rounded-3xl bg-[#11110e] text-white shadow-[0_10px_40px_rgba(0,0,0,0.12)]">
+          <div
+            className="rounded-3xl bg-[#11110e] text-white shadow-[0_10px_40px_rgba(0,0,0,0.12)]"
+            data-animate="slide-up"
+          >
             <div className="grid gap-8 px-8 py-10 lg:grid-cols-[1.3fr_0.7fr]">
-              <div>
+              <div data-animate="slide-left">
                 <h3 className="font-display text-3xl">
                   Book Indoor Arena with a discount
                 </h3>
@@ -921,7 +1100,11 @@ function App() {
                 </button>
               </div>
               <div className="flex items-center justify-end">
-                <div className="rounded-3xl bg-white/10 px-8 py-6 text-center">
+                <div
+                  className="rounded-3xl bg-white/10 px-8 py-6 text-center"
+                  data-animate="slide-right"
+                  style={{ transitionDelay: "120ms" }}
+                >
                   <p className="text-4xl font-display">10%</p>
                   <p className="mt-2 text-xs uppercase tracking-[0.3em] text-white/70">
                     Promo codes available
@@ -933,7 +1116,10 @@ function App() {
         </section>
 
         <section id="faq" className="mx-auto max-w-6xl px-6 pb-16">
-          <div className="rounded-3xl bg-white p-8 shadow-[0_10px_40px_rgba(0,0,0,0.06)]">
+          <div
+            className="rounded-3xl bg-white p-8 shadow-[0_10px_40px_rgba(0,0,0,0.06)]"
+            data-animate="slide-up"
+          >
             <div className="text-center">
               <h2 className="font-display text-3xl sm:text-4xl">FAQs</h2>
               <p className="mt-2 text-sm text-[#6f6b66]">
@@ -941,10 +1127,12 @@ function App() {
               </p>
             </div>
             <div className="mt-8 grid gap-6 md:grid-cols-3">
-              {faqItems.map((item) => (
+              {faqItems.map((item, index) => (
                 <div
                   key={item.question}
                   className="rounded-2xl bg-[#faf9f7] p-5"
+                  data-animate="slide-up"
+                  style={{ transitionDelay: `${index * 90}ms` }}
                 >
                   <p className="font-semibold">{item.question}</p>
                   <p className="mt-2 text-sm text-[#6f6b66]">{item.answer}</p>
@@ -963,7 +1151,10 @@ function App() {
           </div>
           <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_1.15fr]">
             <div className="grid gap-6">
-              <div className="rounded-[28px] border border-[#e3e0da] bg-white px-10 py-8 shadow-[0_10px_28px_rgba(0,0,0,0.06)]">
+              <div
+                className="rounded-[28px] border border-[#e3e0da] bg-white px-10 py-8 shadow-[0_10px_28px_rgba(0,0,0,0.06)]"
+                data-animate="slide-left"
+              >
                 <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.35em] text-[#7b756f]">
                   <span>WhatsApp</span>
                   <span>Fast response</span>
@@ -981,7 +1172,11 @@ function App() {
                   Message us
                 </a>
               </div>
-              <div className="rounded-[28px] border border-[#e3e0da] bg-white px-10 py-8 shadow-[0_10px_28px_rgba(0,0,0,0.06)]">
+              <div
+                className="rounded-[28px] border border-[#e3e0da] bg-white px-10 py-8 shadow-[0_10px_28px_rgba(0,0,0,0.06)]"
+                data-animate="slide-left"
+                style={{ transitionDelay: "90ms" }}
+              >
                 <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.35em] text-[#7b756f]">
                   <span>Email</span>
                   <span>24h reply</span>
@@ -1000,7 +1195,10 @@ function App() {
                 </a>
               </div>
             </div>
-            <div className="overflow-hidden rounded-[28px] border border-[#e3e0da] bg-white shadow-[0_10px_28px_rgba(0,0,0,0.06)]">
+            <div
+              className="overflow-hidden rounded-[28px] border border-[#e3e0da] bg-white shadow-[0_10px_28px_rgba(0,0,0,0.06)]"
+              data-animate="slide-right"
+            >
               <div className="h-64 w-full">
                 <iframe
                   title="Dolphins Indoor Basketball Court"
@@ -1082,14 +1280,14 @@ function App() {
         </div>
       </footer>
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 px-4 py-8">
           <button
             className="absolute inset-0 cursor-default"
             onClick={closeModal}
             type="button"
             aria-label="Close booking modal"
           />
-          <div className="relative w-full max-w-5xl overflow-hidden rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur">
+          <div className="booking-modal relative w-full max-w-5xl overflow-visible rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur">
             <div className="flex items-center justify-between px-8 pt-8 text-white/70">
               <p className="text-[11px] uppercase tracking-[0.35em]">
                 Reserve your booking
@@ -1102,7 +1300,7 @@ function App() {
                 Close
               </button>
             </div>
-            <div className="grid max-h-[80vh] gap-8 overflow-y-auto px-8 pb-10 pt-6 lg:grid-cols-2">
+            <div className="grid gap-8 overflow-visible px-8 pb-10 pt-6 lg:grid-cols-2">
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center gap-3">
                   {(["Hourly", "Daily", "Weekly"] as Plan[]).map((option) => (
