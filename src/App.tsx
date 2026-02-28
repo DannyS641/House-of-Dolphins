@@ -122,7 +122,9 @@ const resolveCourtImage = (court: Court) => {
   if (!normalized) return "";
   if (normalized.startsWith("http")) return normalized;
   if (!supabase) return normalized;
-  const { data } = supabase.storage.from(COURTS_BUCKET).getPublicUrl(normalized);
+  const { data } = supabase.storage
+    .from(COURTS_BUCKET)
+    .getPublicUrl(normalized);
   return data.publicUrl.replace(/ /g, "%20");
 };
 
@@ -146,7 +148,7 @@ const fallbackCourts: Court[] = [
   },
   {
     id: "gym",
-    name: "Gym",
+    name: "Gym (Group Workouts)",
     hourly_rate: 10000,
     daily_rate: 75000,
     weekly_rate: 450000,
@@ -1693,13 +1695,13 @@ function App() {
                     Signed in as {adminUser.email}
                   </div>
                   <div className="flex items-center gap-3">
-                      <button
-                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70"
-                        type="button"
-                        onClick={() => void fetchBookings()}
-                      >
-                        Refresh
-                      </button>
+                    <button
+                      className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70"
+                      type="button"
+                      onClick={() => void fetchBookings()}
+                    >
+                      Refresh
+                    </button>
                     <button
                       className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#11110e]"
                       type="button"
