@@ -74,6 +74,12 @@ const formatNaira = (amount: number) => `NGN ${NGN.format(amount)}`;
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+const toMinutes = (value: string) => {
+  const [h, m] = value.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
@@ -627,6 +633,34 @@ function App() {
     if (!selectedCourt) {
       setBookingNote({ tone: "bad", message: "Select a court first." });
       return;
+    }
+
+    const today = todayISO();
+    if (startDate < today) {
+      setBookingNote({
+        tone: "bad",
+        message: "Start date cannot be in the past.",
+      });
+      return;
+    }
+    if (plan !== "Hourly" && endDate < today) {
+      setBookingNote({
+        tone: "bad",
+        message: "End date cannot be in the past.",
+      });
+      return;
+    }
+    if (plan === "Hourly" && startDate === today) {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = startTime ? toMinutes(startTime) : null;
+      if (startMinutes === null || startMinutes <= nowMinutes) {
+        setBookingNote({
+          tone: "bad",
+          message: "Start time must be later than the current time.",
+        });
+        return;
+      }
     }
 
     if (!supabase) {
