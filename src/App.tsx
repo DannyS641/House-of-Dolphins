@@ -16,6 +16,7 @@ type Court = {
   weekly_rate: number;
   is_active?: boolean | null;
   image?: string;
+  source_id?: string | null;
 };
 
 type Promo = {
@@ -350,9 +351,20 @@ function App() {
   const qrCourtParamRef = useRef<string | null>(initialQr.courtParam);
   const location = useLocation();
 
+  const findCourtByParam = useCallback(
+    (param: string | null | undefined, list = courts) => {
+      if (!param) return undefined;
+      return list.find(
+        (court) =>
+          court.id === param || court.slug === param || court.source_id === param,
+      );
+    },
+    [courts],
+  );
+
   const selectedCourt = useMemo(
-    () => courts.find((court) => court.id === selectedCourtId),
-    [courts, selectedCourtId],
+    () => findCourtByParam(selectedCourtId),
+    [findCourtByParam, selectedCourtId],
   );
 
   const featuredCourt = useMemo(() => {
@@ -395,16 +407,21 @@ function App() {
           if (!match) return fallback;
           const override = COURT_PRICE_OVERRIDES[fallback.id] ?? {};
           return {
-            ...match,
-            image: fallback.image,
+            ...fallback,
+            slug: match.slug ?? fallback.slug,
+            card_image: match.card_image ?? fallback.card_image,
+            hero_image: match.hero_image ?? fallback.hero_image,
+            hourly_rate: match.hourly_rate ?? fallback.hourly_rate,
+            daily_rate: match.daily_rate ?? fallback.daily_rate,
+            weekly_rate: match.weekly_rate ?? fallback.weekly_rate,
+            is_active: match.is_active ?? fallback.is_active,
+            source_id: match.id,
             ...override,
           };
         });
         setCourts(merged);
         const qrParam = qrCourtParamRef.current;
-        const matchedCourt = qrParam
-          ? data.find((court) => court.id === qrParam || court.slug === qrParam)
-          : undefined;
+        const matchedCourt = qrParam ? findCourtByParam(qrParam, merged) : undefined;
         const fallbackId = merged[0]?.id ?? data[0].id;
         const nextId =
           matchedCourt?.id ??
@@ -543,7 +560,9 @@ function App() {
   };
 
   const getCourtName = (courtId: string) =>
-    courts.find((court) => court.id === courtId)?.name ?? courtId;
+    courts.find(
+      (court) => court.id === courtId || court.source_id === courtId,
+    )?.name ?? courtId;
 
   const handleApplyPromo = async () => {
     const code = promoCode.trim().toUpperCase();
@@ -674,7 +693,7 @@ function App() {
     }
 
     const payload = {
-      court_id: selectedCourt.id,
+      court_id: selectedCourt.source_id ?? selectedCourt.id,
       plan,
       start_date: startDate,
       end_date: plan === "Hourly" ? startDate : endDate,
