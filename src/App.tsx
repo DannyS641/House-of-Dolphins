@@ -692,6 +692,7 @@ function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (location.pathname !== "/") return;
     const elements = Array.from(
       document.querySelectorAll<HTMLElement>("[data-animate]"),
     );
@@ -727,7 +728,7 @@ function App() {
       observer.observe(el);
     });
     return () => observer.disconnect();
-  }, [courts.length]);
+  }, [courts.length, location.pathname]);
 
   const closeModal = () => {
     setIsModalOpen(false);
