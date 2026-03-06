@@ -362,6 +362,12 @@ function App() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordChangeError, setPasswordChangeError] = useState("");
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
@@ -931,6 +937,18 @@ function App() {
   }, [adminUser]);
 
   useEffect(() => {
+    const requiresChange = Boolean(
+      adminUser?.user_metadata &&
+        (adminUser.user_metadata as { must_change_password?: boolean })
+          .must_change_password,
+    );
+    setMustChangePassword(requiresChange);
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordChangeError("");
+  }, [adminUser]);
+
+  useEffect(() => {
     if (!supabase) return;
     let isMounted = true;
 
@@ -1042,6 +1060,38 @@ function App() {
     setAdminNotifications([]);
   };
 
+  const handleAdminPasswordChange = async () => {
+    setPasswordChangeError("");
+    if (!supabase) {
+      setPasswordChangeError("Supabase is not configured.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordChangeError("Use at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeError("Passwords do not match.");
+      return;
+    }
+    setPasswordChangeLoading(true);
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+      data: { must_change_password: false },
+    });
+    setPasswordChangeLoading(false);
+    if (error) {
+      setPasswordChangeError("Password update failed. Try again.");
+      return;
+    }
+    if (data.user) {
+      setAdminUser(data.user);
+    }
+    setMustChangePassword(false);
+    setNewPassword("");
+    setConfirmPassword("");
+  };
+
   const updateBookingStatus = async (
     bookingId: string,
     status: "confirmed" | "rejected",
@@ -1109,6 +1159,26 @@ function App() {
               Search courts...
             </div>
             <button
+              className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d9d4cc] text-[#11110e]"
+              type="button"
+              aria-label="Toggle navigation"
+              aria-expanded={isMobileNavOpen}
+              onClick={() => setIsMobileNavOpen((prev) => !prev)}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5"
+              >
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            <button
               className="rounded-full bg-[#11110e] text-white px-4 py-2 text-sm font-medium"
               onClick={() => setIsModalOpen(true)}
               type="button"
@@ -1117,6 +1187,47 @@ function App() {
             </button>
           </div>
         </div>
+        {isMobileNavOpen && (
+          <div className="lg:hidden border-t border-[#e6e2db] bg-[#faf9f7]">
+            <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-4 text-sm font-medium text-[#2b2b2b]">
+              <a
+                className="hover:text-black"
+                href="#courts"
+                onClick={() => setIsMobileNavOpen(false)}
+              >
+                Courts
+              </a>
+              <a
+                className="hover:text-black"
+                href="#usage"
+                onClick={() => setIsMobileNavOpen(false)}
+              >
+                Usage
+              </a>
+              <a
+                className="hover:text-black"
+                href="#faq"
+                onClick={() => setIsMobileNavOpen(false)}
+              >
+                FAQ
+              </a>
+              <a
+                className="hover:text-black"
+                href="#contact"
+                onClick={() => setIsMobileNavOpen(false)}
+              >
+                Contact
+              </a>
+              <Link
+                className="hover:text-black"
+                to="/admin"
+                onClick={() => setIsMobileNavOpen(false)}
+              >
+                Admin
+              </Link>
+            </div>
+          </div>
+        )}
       </header>
 
       <main>
@@ -1830,6 +1941,59 @@ function App() {
 
   const adminPage = (
     <div className="min-h-screen overflow-y-auto bg-[#0f0f11] text-white">
+      {mustChangePassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
+          <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#141416] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+              Security update
+            </p>
+            <h2 className="mt-3 text-lg font-semibold text-white">
+              Change your password
+            </h2>
+            <p className="mt-2 text-sm text-white/70">
+              You signed in with a temporary password. Set a new one to
+              continue.
+            </p>
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className={labelClass}>New password</label>
+                <input
+                  type="password"
+                  className={`${inputClass} mt-2`}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Confirm password</label>
+                <input
+                  type="password"
+                  className={`${inputClass} mt-2`}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                />
+              </div>
+              {passwordChangeError ? (
+                <p className="text-xs text-[#f7b7b7]">
+                  {passwordChangeError}
+                </p>
+              ) : null}
+              <button
+                className={`rounded-full px-5 py-2 text-xs font-semibold ${
+                  passwordChangeLoading
+                    ? "cursor-not-allowed bg-white/40 text-white/60"
+                    : "bg-white text-[#11110e]"
+                }`}
+                type="button"
+                onClick={handleAdminPasswordChange}
+                disabled={passwordChangeLoading}
+              >
+                Update password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {adminNotifications.length > 0 && (
         <div className="fixed right-6 top-6 z-50 grid gap-3">
           {adminNotifications.map((notice) => (
