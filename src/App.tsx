@@ -92,6 +92,34 @@ const daysBetweenInclusive = (startISO: string, endISO: string) => {
   return Math.max(1, days);
 };
 
+const isDateWithin = (dateISO: string, startISO: string, endISO: string) =>
+  dateISO >= startISO && dateISO <= endISO;
+
+const dateRangesOverlap = (
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string,
+) => startA <= endB && endA >= startB;
+
+const minutesInDay = 24 * 60;
+
+const toTimeRange = (
+  time: string | null | undefined,
+  hoursValue: number | null | undefined,
+) => {
+  const startMinutes = time ? toMinutes(time) : null;
+  if (startMinutes === null || hoursValue == null) return null;
+  const safeHours = clamp(hoursValue, 1, 12);
+  const endMinutes = Math.min(minutesInDay, startMinutes + safeHours * 60);
+  return { start: startMinutes, end: endMinutes };
+};
+
+const timeRangesOverlap = (
+  a: { start: number; end: number },
+  b: { start: number; end: number },
+) => a.start < b.end && a.end > b.start;
+
 const COURTS_BUCKET = "courts";
 const COURT_IMAGE_OVERRIDES: Record<string, string> = {
   "indoor-arena": "/indoor%20arena.jpg",
@@ -337,6 +365,11 @@ function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
+  const [availabilityBookings, setAvailabilityBookings] = useState<Booking[]>(
+    [],
+  );
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
   const [adminNotifications, setAdminNotifications] = useState<AdminNotice[]>(
     [],
   );
@@ -366,6 +399,8 @@ function App() {
     () => findCourtByParam(selectedCourtId),
     [findCourtByParam, selectedCourtId],
   );
+
+  const bookingCourtId = selectedCourt?.source_id ?? selectedCourt?.id ?? "";
 
   const featuredCourt = useMemo(() => {
     const byName = courts.find((court) =>
@@ -482,6 +517,145 @@ function App() {
       pricing.total,
     )}`;
   }, [selectedCourt, plan, startDate, endDate, startTime, pricing.total]);
+
+  useEffect(() => {
+    if (!supabase || !bookingCourtId || !isModalOpen) return;
+    let isMounted = true;
+    const loadAvailability = async () => {
+      setAvailabilityLoading(true);
+      setAvailabilityError("");
+      const rangeEnd = plan === "Hourly" ? startDate : endDate;
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("id,court_id,plan,start_date,end_date,start_time,hours,status")
+        .eq("court_id", bookingCourtId)
+        .eq("status", "confirmed")
+        .lte("start_date", rangeEnd)
+        .gte("end_date", startDate);
+      if (!isMounted) return;
+      if (error) {
+        setAvailabilityError(
+          "Availability could not be verified. Please try again.",
+        );
+        setAvailabilityBookings([]);
+      } else {
+        setAvailabilityBookings((data ?? []) as Booking[]);
+      }
+      setAvailabilityLoading(false);
+    };
+    loadAvailability();
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    bookingCourtId,
+    endDate,
+    isModalOpen,
+    plan,
+    startDate,
+    supabase,
+  ]);
+
+  const availability = useMemo(() => {
+    if (!selectedCourt) {
+      return {
+        state: "idle" as const,
+        available: true,
+        message: "Select a court to check availability.",
+      };
+    }
+    if (!supabase) {
+      return {
+        state: "idle" as const,
+        available: true,
+        message: "Availability checks require Supabase configuration.",
+      };
+    }
+    if (availabilityLoading) {
+      return {
+        state: "checking" as const,
+        available: false,
+        message: "Checking availability...",
+      };
+    }
+    if (availabilityError) {
+      return {
+        state: "error" as const,
+        available: true,
+        message: availabilityError,
+      };
+    }
+
+    const desiredTimeRange =
+      plan === "Hourly" ? toTimeRange(startTime, hours) : null;
+    if (plan === "Hourly" && !desiredTimeRange) {
+      return {
+        state: "error" as const,
+        available: true,
+        message: "Enter a valid start time to check availability.",
+      };
+    }
+
+    const conflict = availabilityBookings.find((booking) => {
+      if (plan === "Hourly") {
+        if (!isDateWithin(startDate, booking.start_date, booking.end_date)) {
+          return false;
+        }
+        if (booking.plan !== "Hourly") {
+          return true;
+        }
+        const bookingRange = toTimeRange(booking.start_time, booking.hours);
+        if (!bookingRange || !desiredTimeRange) return true;
+        return timeRangesOverlap(desiredTimeRange, bookingRange);
+      }
+
+      if (
+        !dateRangesOverlap(
+          startDate,
+          endDate,
+          booking.start_date,
+          booking.end_date,
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    if (conflict) {
+      const message =
+        plan === "Hourly"
+          ? conflict.plan === "Hourly"
+            ? "This time is already booked."
+            : "This date is fully booked."
+          : "This date range overlaps an existing booking.";
+      return {
+        state: "unavailable" as const,
+        available: false,
+        message,
+      };
+    }
+
+    return {
+      state: "available" as const,
+      available: true,
+      message: "Dates available. Continue to reserve.",
+    };
+  }, [
+    availabilityBookings,
+    availabilityError,
+    availabilityLoading,
+    endDate,
+    hours,
+    plan,
+    selectedCourt,
+    startDate,
+    startTime,
+    supabase,
+  ]);
+
+  const canReserve =
+    availability.state !== "unavailable" && availability.state !== "checking";
 
   const handlePlanChange = (nextPlan: Plan) => {
     setPlan(nextPlan);
@@ -682,6 +856,18 @@ function App() {
         });
         return;
       }
+    }
+
+    if (availability.state === "checking") {
+      setBookingNote({
+        tone: "bad",
+        message: "Availability is still checking. Please wait a moment.",
+      });
+      return;
+    }
+    if (availability.state === "unavailable") {
+      setBookingNote({ tone: "bad", message: availability.message });
+      return;
     }
 
     if (!supabase) {
@@ -1505,8 +1691,17 @@ function App() {
                       </div>
                     </div>
                     <div className="flex h-full flex-col justify-between rounded-2xl bg-white/10 p-4">
-                      <p className="text-sm text-[#b4f0c9]">
-                        Dates available. Continue to reserve.
+                      <p
+                        className={`text-sm ${
+                          availability.state === "unavailable" ||
+                          availability.state === "error"
+                            ? "text-[#f7b7b7]"
+                            : availability.state === "checking"
+                              ? "text-white/70"
+                              : "text-[#b4f0c9]"
+                        }`}
+                      >
+                        {availability.message}
                       </p>
                       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-white/60">
                         <button
@@ -1516,9 +1711,14 @@ function App() {
                           Check & Price
                         </button>
                         <button
-                          className="whitespace-nowrap rounded-full bg-white px-4 py-2 text-[11px] font-semibold text-[#11110e] tracking-normal"
+                          className={`whitespace-nowrap rounded-full px-4 py-2 text-[11px] font-semibold tracking-normal ${
+                            canReserve
+                              ? "bg-white text-[#11110e]"
+                              : "cursor-not-allowed bg-white/40 text-white/60"
+                          }`}
                           type="button"
                           onClick={focusForm}
+                          disabled={!canReserve}
                         >
                           Reserve now
                         </button>
@@ -1608,9 +1808,14 @@ function App() {
                     Cancel
                   </button>
                   <button
-                    className="rounded-full bg-white px-5 py-2 text-xs font-semibold text-[#11110e]"
+                    className={`rounded-full px-5 py-2 text-xs font-semibold ${
+                      canReserve
+                        ? "bg-white text-[#11110e]"
+                        : "cursor-not-allowed bg-white/40 text-white/60"
+                    }`}
                     type="button"
                     onClick={handleReserve}
+                    disabled={!canReserve}
                   >
                     Confirm reservation
                   </button>
