@@ -968,7 +968,7 @@ function App() {
 
   useEffect(() => {
     const isAdmin = location.pathname === "/admin";
-    document.body.style.overflow = isAdmin ? "hidden" : "";
+    document.body.style.overflow = isAdmin ? "auto" : "";
     return () => {
       document.body.style.overflow = "";
     };
@@ -1829,7 +1829,7 @@ function App() {
   );
 
   const adminPage = (
-    <div className="h-screen overflow-hidden overscroll-none bg-[#0f0f11] text-white">
+    <div className="min-h-screen overflow-y-auto bg-[#0f0f11] text-white">
       {adminNotifications.length > 0 && (
         <div className="fixed right-6 top-6 z-50 grid gap-3">
           {adminNotifications.map((notice) => (
@@ -1849,7 +1849,7 @@ function App() {
           ))}
         </div>
       )}
-      <div className="mx-auto flex h-screen w-full max-w-5xl flex-col px-6 py-10">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-10">
         <div className="flex items-center justify-between pb-6">
           <div className="text-xs uppercase tracking-[0.35em] text-white/50">
             Admin access
