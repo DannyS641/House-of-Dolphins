@@ -1673,14 +1673,17 @@ function App() {
         </div>
       </footer>
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 px-4 py-8">
-          <button
-            className="absolute inset-0 cursor-default"
-            onClick={closeModal}
-            type="button"
-            aria-label="Close booking modal"
-          />
-          <div className="booking-modal relative w-full max-w-5xl overflow-visible rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/70"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeModal();
+          }}
+        >
+          <div className="flex min-h-full items-start justify-center px-4 py-4 sm:items-center sm:py-8">
+          <div
+            className="booking-modal relative w-full max-w-5xl overflow-visible rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between px-8 pt-8 text-white/70">
               <p className="text-[11px] uppercase tracking-[0.35em]">
                 Reserve your booking
@@ -1987,6 +1990,7 @@ function App() {
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       )}
