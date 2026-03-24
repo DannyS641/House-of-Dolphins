@@ -4,6 +4,7 @@ import QRCode from "react-qr-code";
 import { createClient, type User } from "@supabase/supabase-js";
 
 type Plan = "Hourly" | "Daily" | "Weekly";
+type RentalType = "Individual" | "Team";
 
 type Court = {
   id: string;
@@ -325,6 +326,7 @@ const faqItems = [
 ];
 
 const eventTypes = [
+  "Training",
   "Tournament",
   "School event",
   "Wedding",
@@ -332,6 +334,25 @@ const eventTypes = [
   "Corporate event",
   "Other",
 ];
+const rentalTypes: RentalType[] = ["Individual", "Team"];
+const rentalTypeNotePrefix = "Rental type:";
+const INDIVIDUAL_HOURLY_RATE = 1500;
+
+const buildBookingNotes = (rentalType: RentalType, notes: string) => {
+  const trimmedNotes = notes.trim();
+  return trimmedNotes
+    ? `${rentalTypeNotePrefix} ${rentalType}\n${trimmedNotes}`
+    : `${rentalTypeNotePrefix} ${rentalType}`;
+};
+
+const getRentalTypeFromNotes = (notes?: string | null) => {
+  const firstLine = notes?.split("\n")[0]?.trim() ?? "";
+  if (!firstLine.startsWith(rentalTypeNotePrefix)) return null;
+  const value = firstLine.slice(rentalTypeNotePrefix.length).trim();
+  return rentalTypes.includes(value as RentalType)
+    ? (value as RentalType)
+    : null;
+};
 function App() {
   const initialQr = useMemo(() => {
     if (typeof window === "undefined") {
@@ -383,6 +404,7 @@ function App() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [rentalType, setRentalType] = useState<RentalType>("Individual");
   const [eventType, setEventType] = useState(eventTypes[0]);
   const [notes, setNotes] = useState("");
   const nameRef = useRef<HTMLInputElement | null>(null);
@@ -485,7 +507,11 @@ function App() {
   const baseAmount = useMemo(() => {
     if (!selectedCourt) return 0;
     if (plan === "Hourly") {
-      return selectedCourt.hourly_rate * clamp(hours, 1, 12);
+      const hourlyRate =
+        rentalType === "Individual"
+          ? INDIVIDUAL_HOURLY_RATE
+          : selectedCourt.hourly_rate;
+      return hourlyRate * clamp(hours, 1, 12);
     }
     if (plan === "Daily") {
       const days = daysBetweenInclusive(startDate, endDate);
@@ -494,7 +520,7 @@ function App() {
     const days = daysBetweenInclusive(startDate, endDate);
     const weeks = Math.max(1, Math.ceil(days / 7));
     return selectedCourt.weekly_rate * weeks;
-  }, [selectedCourt, plan, hours, startDate, endDate]);
+  }, [selectedCourt, plan, rentalType, hours, startDate, endDate]);
 
   const pricing = useMemo(() => {
     const discount = promo
@@ -519,10 +545,18 @@ function App() {
       plan === "Hourly"
         ? `${startDate} at ${startTime}`
         : `${startDate} to ${endDate}`;
-    return `${selectedCourt.name} | ${plan} | ${dateLabel} | Total ${formatNaira(
+    return `${selectedCourt.name} | ${rentalType} rental | ${plan} | ${dateLabel} | Total ${formatNaira(
       pricing.total,
     )}`;
-  }, [selectedCourt, plan, startDate, endDate, startTime, pricing.total]);
+  }, [
+    selectedCourt,
+    rentalType,
+    plan,
+    startDate,
+    endDate,
+    startTime,
+    pricing.total,
+  ]);
 
   useEffect(() => {
     if (!supabase || !bookingCourtId || !isModalOpen) return;
@@ -900,7 +934,7 @@ function App() {
       customer_phone: customerPhone,
       customer_email: customerEmail,
       event_type: eventType,
-      notes,
+      notes: buildBookingNotes(rentalType, notes),
       status: "pending",
     };
 
@@ -1848,6 +1882,25 @@ function App() {
                   {bookingSummary}
                 </div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className={labelClass}>Rental for</label>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      {rentalTypes.map((option) => (
+                        <button
+                          key={option}
+                          className={`rounded-full px-4 py-2 text-xs font-semibold ${
+                            rentalType === option
+                              ? "bg-white text-[#11110e]"
+                              : "border border-white/20 text-white/80"
+                          }`}
+                          onClick={() => setRentalType(option)}
+                          type="button"
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label className={labelClass}>Full name</label>
                     <input
@@ -2125,6 +2178,9 @@ function App() {
                         <div>
                           <p className="text-sm font-semibold">
                             {getCourtName(booking.court_id)} • {booking.plan}
+                            {getRentalTypeFromNotes(booking.notes)
+                              ? ` • ${getRentalTypeFromNotes(booking.notes)}`
+                              : ""}
                           </p>
                           <p className="mt-1 text-xs text-white/60">
                             {booking.customer_name} · {booking.customer_email}
