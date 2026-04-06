@@ -353,6 +353,19 @@ const getRentalTypeFromNotes = (notes?: string | null) => {
     ? (value as RentalType)
     : null;
 };
+
+const BOOKINGS_PER_PAGE = 10;
+
+const formatBookingWindow = (booking: Booking) =>
+  booking.plan === "Hourly"
+    ? `${booking.start_date} at ${booking.start_time ?? "N/A"}`
+    : `${booking.start_date} to ${booking.end_date}`;
+
+const formatShortDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString("en-NG", {
+    month: "short",
+    day: "numeric",
+  });
 function App() {
   const initialQr = useMemo(() => {
     if (typeof window === "undefined") {
@@ -400,6 +413,7 @@ function App() {
   const [adminNotifications, setAdminNotifications] = useState<AdminNotice[]>(
     [],
   );
+  const [adminPageNumber, setAdminPageNumber] = useState(1);
   const adminUserRef = useRef<User | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -779,6 +793,120 @@ function App() {
       (court) => court.id === courtId || court.source_id === courtId,
     )?.name ?? courtId;
 
+  const adminAnalytics = useMemo(() => {
+    const pending = bookings.filter((booking) => booking.status === "pending");
+    const confirmed = bookings.filter(
+      (booking) => booking.status === "confirmed",
+    );
+    const rejected = bookings.filter((booking) => booking.status === "rejected");
+    const totalRevenue = confirmed.reduce(
+      (sum, booking) => sum + booking.total_amount,
+      0,
+    );
+    const upcoming = bookings.filter(
+      (booking) => booking.start_date >= todayISO() && booking.status !== "rejected",
+    );
+
+    return {
+      total: bookings.length,
+      pending: pending.length,
+      confirmed: confirmed.length,
+      rejected: rejected.length,
+      totalRevenue,
+      upcoming: upcoming.length,
+    };
+  }, [bookings]);
+
+  const adminStatusChart = useMemo(
+    () => [
+      {
+        label: "Pending",
+        value: adminAnalytics.pending,
+        color: "bg-[#f2d194]",
+      },
+      {
+        label: "Confirmed",
+        value: adminAnalytics.confirmed,
+        color: "bg-[#6ee7b7]",
+      },
+      {
+        label: "Rejected",
+        value: adminAnalytics.rejected,
+        color: "bg-[#fca5a5]",
+      },
+    ],
+    [adminAnalytics.confirmed, adminAnalytics.pending, adminAnalytics.rejected],
+  );
+
+  const adminBookingTrend = useMemo(() => {
+    const today = new Date();
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (6 - index));
+      const iso = date.toISOString().slice(0, 10);
+      const count = bookings.filter((booking) => {
+        const created = booking.created_at?.slice(0, 10) ?? booking.start_date;
+        return created === iso;
+      }).length;
+      return {
+        label: formatShortDate(iso),
+        value: count,
+      };
+    });
+
+    return days;
+  }, [bookings]);
+
+  const adminTopCourts = useMemo(() => {
+    const grouped = bookings.reduce<Record<string, { count: number; revenue: number }>>(
+      (acc, booking) => {
+        const courtName = getCourtName(booking.court_id);
+        if (!acc[courtName]) {
+          acc[courtName] = { count: 0, revenue: 0 };
+        }
+        acc[courtName].count += 1;
+        if (booking.status === "confirmed") {
+          acc[courtName].revenue += booking.total_amount;
+        }
+        return acc;
+      },
+      {},
+    );
+
+    return Object.entries(grouped)
+      .map(([name, values]) => ({
+        name,
+        count: values.count,
+        revenue: values.revenue,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [bookings, getCourtName]);
+
+  const adminEventTypes = useMemo(() => {
+    const grouped = bookings.reduce<Record<string, number>>((acc, booking) => {
+      const key = booking.event_type?.trim() || "Other";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(grouped)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [bookings]);
+
+  const totalAdminPages = Math.max(1, Math.ceil(bookings.length / BOOKINGS_PER_PAGE));
+
+  const paginatedBookings = useMemo(() => {
+    const start = (adminPageNumber - 1) * BOOKINGS_PER_PAGE;
+    return bookings.slice(start, start + BOOKINGS_PER_PAGE);
+  }, [adminPageNumber, bookings]);
+
+  useEffect(() => {
+    setAdminPageNumber((current) => Math.min(current, totalAdminPages));
+  }, [totalAdminPages]);
+
   const handleApplyPromo = async () => {
     const code = promoCode.trim().toUpperCase();
     setPromoNote({ tone: "", message: "" });
@@ -1067,6 +1195,52 @@ function App() {
     };
   }, [location.pathname, adminUser]);
 
+  useEffect(() => {
+    if (!supabase) return;
+    if (location.pathname !== "/admin") return;
+    if (!adminUser) return;
+
+    const timeoutMs = 5 * 60 * 1000;
+    let timeoutId = window.setTimeout(() => {
+      void supabase.auth.signOut();
+      setAdminUser(null);
+      setBookings([]);
+      setAdminNotifications([]);
+      setAdminError("Signed out after 5 minutes of inactivity.");
+    }, timeoutMs);
+
+    const resetTimer = () => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        void supabase.auth.signOut();
+        setAdminUser(null);
+        setBookings([]);
+        setAdminNotifications([]);
+        setAdminError("Signed out after 5 minutes of inactivity.");
+      }, timeoutMs);
+    };
+
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, resetTimer, { passive: true }),
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      events.forEach((eventName) =>
+        window.removeEventListener(eventName, resetTimer),
+      );
+    };
+  }, [adminUser, location.pathname]);
+
   const handleAdminLogin = async () => {
     setAdminError("");
     if (!supabase) {
@@ -1093,6 +1267,7 @@ function App() {
     setAdminUser(null);
     setBookings([]);
     setAdminNotifications([]);
+    setAdminError("");
   };
 
   const handleAdminPasswordChange = async () => {
@@ -1998,7 +2173,7 @@ function App() {
   );
 
   const adminPage = (
-    <div className="min-h-screen overflow-y-auto bg-[#0f0f11] text-white">
+    <div className="min-h-screen bg-[#0f0f11] text-white">
       {mustChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
           <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#141416] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
@@ -2083,14 +2258,14 @@ function App() {
             Back to site
           </Link>
         </div>
-        <div className="relative flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-[#141416]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#141416]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
           <div className="flex items-center px-6 py-5 text-white/70">
             <p className="text-[11px] uppercase tracking-[0.35em]">
               Admin dashboard
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-8">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-8">
             {!supabase && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-white/70">
                 Supabase is not configured. Please add your credentials in
@@ -2137,8 +2312,13 @@ function App() {
             {supabase && adminUser && (
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3 text-white/70">
-                  <div className="text-xs uppercase tracking-[0.3em]">
-                    Signed in as {adminUser.email}
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                      Signed in as
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {adminUser.email}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
@@ -2158,10 +2338,245 @@ function App() {
                   </div>
                 </div>
 
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Total reservations
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-white">
+                      {adminAnalytics.total}
+                    </p>
+                    <p className="mt-2 text-sm text-white/60">
+                      {adminAnalytics.upcoming} upcoming bookings
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Pending review
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-[#f2d194]">
+                      {adminAnalytics.pending}
+                    </p>
+                    <p className="mt-2 text-sm text-white/60">
+                      Need approval or rejection
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Confirmed
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-[#b4f0c9]">
+                      {adminAnalytics.confirmed}
+                    </p>
+                    <p className="mt-2 text-sm text-white/60">
+                      Rejected: {adminAnalytics.rejected}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Confirmed revenue
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-white">
+                      {formatNaira(adminAnalytics.totalRevenue)}
+                    </p>
+                    <p className="mt-2 text-sm text-white/60">
+                      Based on approved bookings
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                          Booking trend
+                        </p>
+                        <p className="mt-1 text-sm text-white/60">
+                          New reservations created over the last 7 days
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-6 grid h-52 grid-cols-7 items-end gap-3">
+                      {adminBookingTrend.map((item) => {
+                        const maxValue = Math.max(
+                          ...adminBookingTrend.map((point) => point.value),
+                          1,
+                        );
+                        const height = `${Math.max(
+                          10,
+                          Math.round((item.value / maxValue) * 100),
+                        )}%`;
+                        return (
+                          <div
+                            key={item.label}
+                            className="flex h-full flex-col items-center justify-end gap-3"
+                          >
+                            <span className="text-xs text-white/45">
+                              {item.value}
+                            </span>
+                            <div className="flex h-full w-full items-end rounded-full bg-white/5 p-1">
+                              <div
+                                className="w-full rounded-full bg-[linear-gradient(180deg,#f2d194_0%,#c6752c_100%)]"
+                                style={{ height }}
+                              />
+                            </div>
+                            <span className="text-[11px] text-white/45">
+                              {item.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Status mix
+                    </p>
+                    <p className="mt-1 text-sm text-white/60">
+                      Reservation pipeline at a glance
+                    </p>
+                    <div className="mt-6 space-y-4">
+                      {adminStatusChart.map((item) => {
+                        const width = `${
+                          adminAnalytics.total
+                            ? Math.max(
+                                8,
+                                Math.round(
+                                  (item.value / adminAnalytics.total) * 100,
+                                ),
+                              )
+                            : 0
+                        }%`;
+                        return (
+                          <div key={item.label} className="space-y-2">
+                            <div className="flex items-center justify-between text-sm text-white/75">
+                              <span>{item.label}</span>
+                              <span>{item.value}</span>
+                            </div>
+                            <div className="h-3 rounded-full bg-white/5">
+                              <div
+                                className={`h-3 rounded-full ${item.color}`}
+                                style={{ width }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Top courts
+                    </p>
+                    <p className="mt-1 text-sm text-white/60">
+                      Most booked spaces and confirmed revenue
+                    </p>
+                    <div className="mt-5 space-y-4">
+                      {adminTopCourts.length > 0 ? (
+                        adminTopCourts.map((court) => {
+                          const maxCount = Math.max(
+                            ...adminTopCourts.map((item) => item.count),
+                            1,
+                          );
+                          return (
+                            <div key={court.name} className="space-y-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    {court.name}
+                                  </p>
+                                  <p className="text-xs text-white/45">
+                                    {formatNaira(court.revenue)} confirmed revenue
+                                  </p>
+                                </div>
+                                <span className="text-sm text-white/70">
+                                  {court.count} bookings
+                                </span>
+                              </div>
+                              <div className="h-2 rounded-full bg-white/5">
+                                <div
+                                  className="h-2 rounded-full bg-[#6ee7b7]"
+                                  style={{
+                                    width: `${Math.max(
+                                      12,
+                                      Math.round((court.count / maxCount) * 100),
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-sm text-white/50">
+                          Court analytics will appear when reservations come in.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                      Event type breakdown
+                    </p>
+                    <p className="mt-1 text-sm text-white/60">
+                      What people are booking the space for
+                    </p>
+                    <div className="mt-5 space-y-4">
+                      {adminEventTypes.length > 0 ? (
+                        adminEventTypes.map((item) => {
+                          const maxValue = Math.max(
+                            ...adminEventTypes.map((entry) => entry.value),
+                            1,
+                          );
+                          return (
+                            <div key={item.label} className="space-y-2">
+                              <div className="flex items-center justify-between text-sm text-white/75">
+                                <span>{item.label}</span>
+                                <span>{item.value}</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-white/5">
+                                <div
+                                  className="h-2 rounded-full bg-[#93c5fd]"
+                                  style={{
+                                    width: `${Math.max(
+                                      12,
+                                      Math.round((item.value / maxValue) * 100),
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-sm text-white/50">
+                          Event analytics will appear when reservations come in.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl border border-white/10 bg-white/5">
-                  <div className="flex items-center justify-between px-5 py-4 text-xs uppercase tracking-[0.3em] text-white/50">
-                    <span>Reservations</span>
-                    <span>{bookings.length} total</span>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                        Reservations
+                      </p>
+                      <p className="mt-1 text-sm text-white/60">
+                        Page {adminPageNumber} of {totalAdminPages}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-white/50">
+                      <span>{bookings.length} total</span>
+                      <span>{BOOKINGS_PER_PAGE} per page</span>
+                    </div>
                   </div>
                   <div className="divide-y divide-white/10">
                     {bookingsLoading && (
@@ -2174,12 +2589,12 @@ function App() {
                         No reservations yet.
                       </div>
                     )}
-                    {bookings.map((booking) => (
+                    {paginatedBookings.map((booking) => (
                       <div
                         key={booking.id}
                         className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 text-white"
                       >
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold">
                             {getCourtName(booking.court_id)} • {booking.plan}
                             {getRentalTypeFromNotes(booking.notes)
@@ -2190,13 +2605,13 @@ function App() {
                             {booking.customer_name} · {booking.customer_email}
                           </p>
                           <p className="mt-1 text-xs text-white/60">
-                            {booking.start_date}
-                            {booking.plan === "Hourly"
-                              ? ` at ${booking.start_time ?? ""}`
-                              : ` to ${booking.end_date}`}
+                            {formatBookingWindow(booking)}
+                          </p>
+                          <p className="mt-1 text-xs text-white/45">
+                            Created {booking.created_at?.slice(0, 10) ?? "N/A"}
                           </p>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center justify-end gap-3">
                           <span className="text-xs text-white/60">
                             {formatNaira(booking.total_amount)}
                           </span>
@@ -2255,6 +2670,52 @@ function App() {
                       </div>
                     ))}
                   </div>
+                  {!bookingsLoading && bookings.length > BOOKINGS_PER_PAGE && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-5 py-4">
+                      <p className="text-sm text-white/55">
+                        Showing{" "}
+                        {(adminPageNumber - 1) * BOOKINGS_PER_PAGE + 1}
+                        {" - "}
+                        {Math.min(
+                          adminPageNumber * BOOKINGS_PER_PAGE,
+                          bookings.length,
+                        )}{" "}
+                        of {bookings.length}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <button
+                          className={`rounded-full border px-4 py-2 text-xs font-semibold ${
+                            adminPageNumber === 1
+                              ? "cursor-not-allowed border-white/10 text-white/30"
+                              : "border-white/20 text-white/80"
+                          }`}
+                          type="button"
+                          onClick={() =>
+                            setAdminPageNumber((page) => Math.max(1, page - 1))
+                          }
+                          disabled={adminPageNumber === 1}
+                        >
+                          Previous
+                        </button>
+                        <button
+                          className={`rounded-full border px-4 py-2 text-xs font-semibold ${
+                            adminPageNumber === totalAdminPages
+                              ? "cursor-not-allowed border-white/10 text-white/30"
+                              : "border-white/20 text-white/80"
+                          }`}
+                          type="button"
+                          onClick={() =>
+                            setAdminPageNumber((page) =>
+                              Math.min(totalAdminPages, page + 1),
+                            )
+                          }
+                          disabled={adminPageNumber === totalAdminPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
