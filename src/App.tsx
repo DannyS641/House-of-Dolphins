@@ -1149,11 +1149,11 @@ function App() {
 
   useEffect(() => {
     const isAdmin = location.pathname === "/admin";
-    document.body.style.overflow = isAdmin ? "auto" : "";
+    document.body.style.overflow = isModalOpen ? "hidden" : isAdmin ? "auto" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [location.pathname]);
+  }, [isModalOpen, location.pathname]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1849,14 +1849,14 @@ function App() {
       </footer>
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/70"
+          className="fixed inset-0 z-50 overflow-hidden bg-black/70"
           onClick={(event) => {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
-          <div className="flex min-h-full items-start justify-center px-4 py-4 sm:items-center sm:py-8">
+          <div className="flex h-full items-center justify-center px-4 py-4 sm:py-8">
           <div
-            className="booking-modal relative w-full max-w-5xl overflow-visible rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur"
+            className="booking-modal relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[#1b1b1d]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur sm:max-h-[calc(100vh-4rem)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between px-8 pt-8 text-white/70">
@@ -1871,7 +1871,8 @@ function App() {
                 Close
               </button>
             </div>
-            <div className="grid gap-8 overflow-visible px-8 pb-10 pt-6 lg:grid-cols-2">
+            <div className="min-h-0 overflow-y-auto px-8 pb-10 pt-6">
+            <div className="grid gap-8 lg:grid-cols-2">
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center gap-3">
                   {(["Hourly", "Daily", "Weekly"] as Plan[]).map((option) => (
@@ -2165,6 +2166,7 @@ function App() {
                 </div>
               </div>
             </div>
+            </div>
           </div>
           </div>
         </div>
@@ -2173,7 +2175,7 @@ function App() {
   );
 
   const adminPage = (
-    <div className="min-h-screen bg-[#0f0f11] text-white">
+    <div className="h-screen overflow-hidden bg-[#0f0f11] text-white">
       {mustChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
           <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#141416] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
@@ -2246,8 +2248,8 @@ function App() {
           ))}
         </div>
       )}
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-10">
-        <div className="flex items-center justify-between pb-6">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col px-6 py-6 sm:py-8">
+        <div className="flex shrink-0 items-center justify-between pb-6">
           <div className="text-xs uppercase tracking-[0.35em] text-white/50">
             Admin access
           </div>
@@ -2259,7 +2261,7 @@ function App() {
           </Link>
         </div>
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#141416]/95 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
-          <div className="flex items-center px-6 py-5 text-white/70">
+          <div className="flex shrink-0 items-center px-6 py-5 text-white/70">
             <p className="text-[11px] uppercase tracking-[0.35em]">
               Admin dashboard
             </p>
