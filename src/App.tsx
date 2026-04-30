@@ -1066,16 +1066,29 @@ function App() {
       status: "pending",
     };
 
-    const { error } = await supabase.from("bookings").insert(payload);
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-    if (error) {
+    if (!response.ok) {
       setBookingNote({ tone: "bad", message: "Booking failed. Try again." });
       return;
     }
 
+    const result = (await response.json()) as {
+      customerEmailSent?: boolean;
+      customerEmailError?: string;
+    };
+
     setBookingNote({
-      tone: "good",
-      message: "Reservation submitted. We will contact you shortly.",
+      tone: result.customerEmailSent ? "good" : "bad",
+      message: result.customerEmailSent
+        ? "Reservation submitted. We will contact you shortly."
+        : `Reservation submitted, but customer email was not sent${
+            result.customerEmailError ? `: ${result.customerEmailError}` : "."
+          }`,
     });
   };
 
@@ -1307,14 +1320,40 @@ function App() {
     status: "confirmed" | "rejected",
   ) => {
     if (!supabase) return;
-    const { error } = await supabase
-      .from("bookings")
-      .update({ status })
-      .eq("id", bookingId);
-    if (error) return;
+    setAdminError("");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const response = await fetch("/api/booking-status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionData.session?.access_token
+          ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+          : {}),
+      },
+      body: JSON.stringify({ bookingId, status }),
+    });
+
+    if (!response.ok) {
+      setAdminError("Status update failed. Try again.");
+      return;
+    }
+    const result = (await response.json()) as {
+      booking?: Booking;
+      emailSent?: boolean;
+      emailError?: string;
+    };
+    if (!result.emailSent) {
+      setAdminError(
+        `Status updated, but the customer email was not sent${
+          result.emailError ? `: ${result.emailError}` : "."
+        }`,
+      );
+    }
     setBookings((prev) =>
       prev.map((booking) =>
-        booking.id === bookingId ? { ...booking, status } : booking,
+        booking.id === bookingId
+          ? { ...booking, ...(result.booking ?? {}), status }
+          : booking,
       ),
     );
     setEditingBookingId(null);
